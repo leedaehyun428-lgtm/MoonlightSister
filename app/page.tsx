@@ -45,6 +45,7 @@ export default function Home() {
     if (window.Kakao && !window.Kakao.isInitialized()) {
       // .env.local에 저장한 키를 가져옵니다.
       window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY); 
+
     }
   }, []);
 
@@ -68,23 +69,29 @@ export default function Home() {
 
   // 5. [기능] 카카오톡 공유하기
   const handleKakaoShare = () => {
-    if (!window.Kakao || !window.Kakao.isInitialized()) {
-      alert('카카오톡 연결 중이야.. 잠시만 기다려줘!');
+    // 1. 카카오 SDK가 로드되지 않았을 때
+    if (!window.Kakao) {
+      alert('카카오톡 공유하기가 로딩 중이야. 잠시만 기다려줘!');
       return;
     }
 
+    // 2. 초기화가 안 되어 있다면 -> 지금 바로 초기화!
+    if (!window.Kakao.isInitialized()) {
+      console.log("초기화 시도 중...");
+      window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY);
+    }
+
     const lastAiMessage = messages.slice().reverse().find(m => m.role === 'assistant');
-    
-    // 현재 접속된 주소 (localhost 혹은 배포된 주소)를 자동으로 가져옴
     const currentUrl = window.location.origin; 
     
-    // 공유할 이미지
+    // 공유할 이미지 주소 만들기
     const shareImage = lastAiMessage?.image 
       ? `${currentUrl}${lastAiMessage.image}` 
-      : `${currentUrl}/og-image.jpg`; // public 폴더에 og-image.jpg 넣어두세요
+      : `${currentUrl}/og-image.jpg`; 
 
     const shareDescription = lastAiMessage?.content.substring(0, 50) + "..." || "오늘의 운세를 확인해보세요.";
 
+    // 3. 공유하기 실행
     window.Kakao.Share.sendDefault({
       objectType: 'feed',
       content: {

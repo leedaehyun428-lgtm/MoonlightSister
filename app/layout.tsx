@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://moonlight-diary-test.vercel.app'),
   title: '달빛 언니의 교환일기',
   description: '오늘 힘든 일 있었어? 언니한테만 털어놔 봐. 타로로 해결책을 줄게.',
   openGraph: {
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
     description: '오늘 밤, 너의 감정을 치유해 줄 신비한 타로 상담소',
     images: [
       {
-        url: '/og-image.jpg', // public 폴더 바로 아래에 파일이 있어야 함
+        url: '/og-image.jpg',
         width: 1200,
         height: 630,
         alt: '달빛 언니 메인 이미지',
@@ -33,27 +34,19 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ko">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
         
         {/* 방문자 측정기 */}
         <Analytics />
         
-        {/* 카카오 SDK 로드 */}
+        {/* ★수정됨★: integrity 제거 (로딩 오류 방지) */}
         <Script
           src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.1/kakao.min.js"
-          integrity="sha384-kDljxUXHaJ9xAb2AzRd59KxjrFjzHa5TAoFQ6GbYTCAG0bjM55XohjjDT7tDDC01"
-          crossOrigin="anonymous"
-          strategy="lazyOnload"
+          strategy="afterInteractive" 
         />
       </body>
     </html>
