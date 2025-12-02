@@ -43,7 +43,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         {/* 방문자 측정기 */}
         <Analytics />
         
-        {/* ★수정됨★: integrity 제거 (로딩 오류 방지) */}
+        {/* integrity 제거 (로딩 오류 방지 수정) */}
         <Script
           src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.1/kakao.min.js"
           strategy="afterInteractive" 
