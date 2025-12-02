@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL('https://moonlight-diary-test.vercel.app'),
+  metadataBase: new URL('https://moonlight-sister.vercel.app/'),
   title: '달빛 언니의 교환일기',
   description: '오늘 힘든 일 있었어? 언니한테만 털어놔 봐. 타로로 해결책을 줄게.',
   openGraph: {
