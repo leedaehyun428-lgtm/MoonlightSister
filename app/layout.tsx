@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-// 1. [추가] Analytics 불러오기
-import { Analytics } from "@vercel/analytics/react";
+import { Analytics } from "@vercel/analytics/react"; 
+import Script from 'next/script'; // 카카오 SDK 로드
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,10 +14,23 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-// 2. [수정] 사이트 이름과 설명 바꾸기
 export const metadata: Metadata = {
-  title: "달빛 언니의 교환일기",
-  description: "오늘의 감정을 털어놓고 위로받으세요.",
+  title: '달빛 언니의 교환일기',
+  description: '오늘 힘든 일 있었어? 언니한테만 털어놔 봐. 타로로 해결책을 줄게.',
+  openGraph: {
+    title: '🌙 달빛 언니의 교환일기',
+    description: '오늘 밤, 너의 감정을 치유해 줄 신비한 타로 상담소',
+    images: [
+      {
+        url: '/og-image.jpg', // public 폴더 바로 아래에 파일이 있어야 함
+        width: 1200,
+        height: 630,
+        alt: '달빛 언니 메인 이미지',
+      },
+    ],
+    locale: 'ko_KR',
+    type: 'website',
+  },
 };
 
 export default function RootLayout({
@@ -26,14 +39,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // 3. [수정] 한국어 사이트니까 ko로 변경
     <html lang="ko">
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
-        {/* 4. [추가] 방문자 측정기 설치 */}
+        
+        {/* 방문자 측정기 */}
         <Analytics />
+        
+        {/* 카카오 SDK 로드 */}
+        <Script
+          src="https://t1.kakaocdn.net/kakao_js_sdk/2.7.1/kakao.min.js"
+          integrity="sha384-kDljxUXHaJ9xAb2AzRd59KxjrFjzHa5TAoFQ6GbYTCAG0bjM55XohjjDT7tDDC01"
+          crossOrigin="anonymous"
+          strategy="lazyOnload"
+        />
       </body>
     </html>
   );
