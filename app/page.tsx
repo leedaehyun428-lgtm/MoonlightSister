@@ -81,15 +81,20 @@ export default function Home() {
       window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY);
     }
 
-    const lastAiMessage = messages.slice().reverse().find(m => m.role === 'assistant');
+const lastAiMessage = messages.slice().reverse().find(m => m.role === 'assistant');
     const currentUrl = window.location.origin; 
     
-    // 공유할 이미지 주소 만들기
+    // 1. [수정] 공유 문구 로직 개선 (삼항 연산자 사용)
+    // AI 메시지가 있으면 앞부분만 자르고, 없으면 기본 문구 사용
+    const shareDescription = lastAiMessage
+      ? lastAiMessage.content.substring(0, 50) + "..."
+      : "오늘 힘든 일 있었어? 언니한테 털어놔 봐.";
+
+    // 2. [수정] 공유 이미지 로직 (문제 2번 해결을 위해 수정)
+    // AI가 뽑아준 카드가 있으면 그걸 쓰고, 없으면 '카톡 전용 정사각형 이미지'를 씀
     const shareImage = lastAiMessage?.image 
       ? `${currentUrl}${lastAiMessage.image}` 
-      : `${currentUrl}/og-image.jpg`; 
-
-    const shareDescription = lastAiMessage?.content.substring(0, 50) + "..." || "오늘의 운세를 확인해보세요.";
+      : `${currentUrl}/kakao-square.jpg`;
 
     // 3. 공유하기 실행
     window.Kakao.Share.sendDefault({
