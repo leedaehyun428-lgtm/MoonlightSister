@@ -56,7 +56,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           async
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2382338957289604"
           crossOrigin="anonymous"
-          strategy="afterInteractive"
         />
       </body>
     </html>
