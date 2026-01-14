@@ -9,7 +9,7 @@ const openai = new OpenAI({
   maxRetries: 0,
 });
 
-// 비상용 태양 카드 (서버가 정말 죽었을 때 나가는 데이터)
+// 비상용 태양 카드
 const FALLBACK_RESULT = {
   reply: "신령님이 너무 깊게 고민하시느라 늦었어! 대신 긍정의 기운이 가득한 카드를 먼저 보내줄게.",
   showCard: true,
@@ -22,7 +22,6 @@ const FALLBACK_RESULT = {
   luckyItem: "황금 열쇠"
 };
 
-// ★★★ [성격 개조] 질문 금지 & 즉문즉답 프롬프트 ★★★
 const systemPrompt = `
   [ROLE]
   You are 'Dalbit Unnie' (달빛 언니), a cool and intuitive Tarot Reader.
@@ -49,6 +48,8 @@ const systemPrompt = `
 `;
 
 export async function POST(req: Request) {
+  console.log("🚀 [API Start] 요청 시작");
+
   try {
     let messages = [];
     try {
@@ -58,7 +59,7 @@ export async function POST(req: Request) {
       messages = [{ role: 'user', content: '운세 봐줘' }];
     }
     
-    // ★ 강제 타로 모드: 사용자가 10글자 이상 말했거나 2번째 턴이면 무조건 카드 뽑기
+    // 강제 타로 모드
     const userTurnCount = messages.filter((m: any) => m.role === 'user').length;
     let finalMessages = [...messages];
     const lastUserMsg = messages[messages.length - 1].content || "";
@@ -82,14 +83,17 @@ export async function POST(req: Request) {
           ],
           response_format: { type: "json_object" },
           temperature: 0.7, 
-          max_tokens: 600,
+          max_tokens: 800, // 토큰 수 약간 늘림 (잘림 방지)
         });
         return response.choices[0].message.content;
     };
 
-    // B. 10초 타이머 (좀비 상태 방지용)
+    // B. ★ 20초 타이머 (시간 연장)
     const timeoutPromise = new Promise((resolve) => {
-        timeoutId = setTimeout(() => resolve("TIMEOUT"), 10000);
+        timeoutId = setTimeout(() => {
+            console.log("⏰ [Server] 20초 타임아웃!");
+            resolve("TIMEOUT");
+        }, 20000);
     });
 
     // C. 경주
@@ -97,12 +101,22 @@ export async function POST(req: Request) {
     clearTimeout(timeoutId!);
 
     let aiResponse;
+
     if (rawContent === "TIMEOUT" || !rawContent) {
+        console.log("⚠️ [Fallback] 타임아웃 또는 데이터 없음");
         aiResponse = FALLBACK_RESULT;
     } else {
         try {
-            aiResponse = JSON.parse(rawContent);
+            // ★★★ [JSON 청소기] 마크다운 기호 제거 ★★★
+            // GPT가 ```json ... ``` 이렇게 줄 때가 있어서, 그걸 벗겨내는 작업입니다.
+            const cleanContent = rawContent.replace(/```json/g, "").replace(/```/g, "").trim();
+            
+            aiResponse = JSON.parse(cleanContent);
+            console.log("✅ [Success] 파싱 성공:", aiResponse.cardName);
+
         } catch (e) {
+            console.error("⚠️ [JSON Error] 파싱 실패. 원본 데이터:", rawContent);
+            // 파싱 실패 시, 원본 데이터가 뭐였는지 로그에 남기고 비상용 카드 사용
             aiResponse = FALLBACK_RESULT;
         }
     }
@@ -115,7 +129,6 @@ export async function POST(req: Request) {
     const majorCards = ['fool', 'magician', 'high_priestess', 'empress', 'emperor', 'hierophant', 'lovers', 'chariot', 'strength', 'hermit', 'justice', 'hanged_man', 'death', 'temperance', 'devil', 'tower', 'star', 'moon', 'sun', 'judgement', 'world', 'wheel_of_fortune', 'three_of_swords', 'ten_of_swords', 'ace_of_cups'];
     
     let safeCardName = majorCards.includes(cleanName) ? `the_${cleanName}` : 'the_sun';
-    // 검, 컵 등 마이너 아르카나 처리 (이미지가 없으면 태양으로)
     if (!majorCards.includes(cleanName) && !safeCardName.startsWith('the_')) {
          safeCardName = 'the_sun';
     }
@@ -128,6 +141,7 @@ export async function POST(req: Request) {
     });
 
   } catch (error: any) {
+    console.error("🔥 [Critical Error]", error);
     return NextResponse.json({ ...FALLBACK_RESULT, image: "/tarot/the_sun.jpg", showCard: true });
   }
 }
