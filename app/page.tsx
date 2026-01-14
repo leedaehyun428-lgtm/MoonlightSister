@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 
-// Typescript 에러 해결 (kakao)
 declare global {
   interface Window {
     Kakao: any;
@@ -15,7 +14,7 @@ type Message = {
   image?: string;
   timestamp: number;
   luckyItem?: string;
-  coupangLink?: string | null; // null 허용
+  coupangLink?: string | null;
   isLocked?: boolean;
   teaser?: string;
   cardKeywords?: string[];
@@ -24,7 +23,6 @@ type Message = {
   cardAdvice?: string;
 };
 
-// 상담 횟수 제한
 const MAX_TURNS = 7;
 
 export default function Home() {
@@ -33,11 +31,8 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  
-  // 사이드바 상태
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
-  // 턴 계산
   const userTurnCount = messages.filter(m => m.role === 'user').length;
   const isLimitReached = userTurnCount >= MAX_TURNS;
 
@@ -56,7 +51,9 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.Kakao && !window.Kakao.isInitialized()) {
-      window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY); 
+      if (process.env.NEXT_PUBLIC_KAKAO_API_KEY) {
+         window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY); 
+      }
     }
   }, []);
 
@@ -86,11 +83,15 @@ export default function Home() {
 
   const handleKakaoShare = () => {
     if (!window.Kakao) return alert('로딩 중...');
-    if (!window.Kakao.isInitialized()) window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY);
-
+    if (!window.Kakao.isInitialized()) {
+        if (process.env.NEXT_PUBLIC_KAKAO_API_KEY) {
+            window.Kakao.init(process.env.NEXT_PUBLIC_KAKAO_API_KEY);
+        } else {
+            return alert("카카오 키 설정이 필요해!");
+        }
+    }
     const lastAiMessage = messages.slice().reverse().find(m => m.role === 'assistant');
     if (lastAiMessage?.isLocked) return alert("🔒 결과를 확인해야 공유할 수 있어!");
-
     const currentUrl = window.location.origin; 
     const shareImage = lastAiMessage?.image ? `${currentUrl}${lastAiMessage.image}` : `${currentUrl}/kakao-square.jpg`;
     
@@ -113,7 +114,6 @@ export default function Home() {
     }
   };
 
-  // ★★★ 핵심 로직 수정 (2단 로딩) ★★★
   const sendMessage = async () => {
     if (!input.trim() || loading || isLimitReached) return;
 
@@ -121,28 +121,34 @@ export default function Home() {
     const userMessage: Message = { role: 'user', content: input, timestamp: Date.now() };
     const newMessages = [...messages, userMessage];
     setMessages(newMessages); 
-    const tempInput = input;
     setInput('');
 
+    // ★ 45초 대기 (서버 10초 타임아웃보다 넉넉하게)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 45000); 
+
     try {
-      // 1. GPT 호출 (쿠팡 제외, 속도 빠름)
-      const apiMessages = newMessages.map(({ role, content }) => ({ role, content }));
+      const recentContext = newMessages.slice(-6).map(({ role, content }) => ({ role, content }));
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: apiMessages }),
+        body: JSON.stringify({ messages: recentContext }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
+
+      if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       
-      // 2. 화면에 먼저 뿌리기 (일단 쿠팡 링크는 null)
       const aiMessage: Message = { 
         role: 'assistant', 
         content: data.reply,
         image: data.image,
         timestamp: Date.now(),
         luckyItem: data.luckyItem,
-        coupangLink: null, // 아직 없음
+        coupangLink: null,
         teaser: data.teaser,
         cardKeywords: data.cardKeywords,
         cardDescription: data.cardDescription,
@@ -152,46 +158,73 @@ export default function Home() {
       };
       
       setMessages((prev) => [...prev, aiMessage]);
+      setLoading(false); 
 
-      // 3. [비동기] 쿠팡 링크 가져오기 (사용자는 이미 챗을 보고 있음)
       if (data.luckyItem) {
-        try {
-          const coupangRes = await fetch('/api/coupang', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ keyword: data.luckyItem }),
-          });
-          const coupangData = await coupangRes.json();
+        setTimeout(async () => {
+          const fallbackLink = `https://www.coupang.com/np/search?component=&q=${encodeURIComponent(data.luckyItem)}`;
+          try {
+            const fetchPromise = fetch('/api/coupang', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ keyword: data.luckyItem }),
+            });
+            // 쿠팡 로딩 7초 대기
+            const timeoutPromise = new Promise((_, reject) => 
+                setTimeout(() => reject(new Error("COUPANG_TIMEOUT")), 7000)
+            );
+            const response: any = await Promise.race([fetchPromise, timeoutPromise]);
+            if (!response.ok) throw new Error("API Error");
+            const coupangData = await response.json();
+            const finalLink = coupangData.link || fallbackLink;
 
-          // 기존 메시지 업데이트 (깜빡임 없이 링크만 채워넣기)
-          setMessages((prev) => {
-            const newMsgs = [...prev];
-            const lastMsg = newMsgs[newMsgs.length - 1];
-            // 마지막 메시지가 AI 메시지이고, 아이템이 같으면 링크 업데이트
-            if (lastMsg.role === 'assistant' && lastMsg.luckyItem === data.luckyItem) {
-                lastMsg.coupangLink = coupangData.link;
-            }
-            return newMsgs;
-          });
-        } catch (e) {
-          console.error("쿠팡 로딩 실패, 검색 링크로 대체합니다.");
-        }
+            setMessages((prev) => {
+              const newMsgs = [...prev];
+              const lastMsg = newMsgs[newMsgs.length - 1];
+              if (lastMsg.role === 'assistant' && lastMsg.luckyItem === data.luckyItem) {
+                  lastMsg.coupangLink = finalLink;
+              }
+              return newMsgs;
+            });
+          } catch (e) {
+            setMessages((prev) => {
+                const newMsgs = [...prev];
+                const lastMsg = newMsgs[newMsgs.length - 1];
+                if (lastMsg.role === 'assistant' && lastMsg.luckyItem === data.luckyItem) {
+                    lastMsg.coupangLink = fallbackLink;
+                }
+                return newMsgs;
+              });
+          }
+        }, 100); 
       }
 
-    } catch (error) {
-      console.error("Error:", error);
-      alert("오류가 났어 ㅠㅠ");
-    } finally {
+    } catch (error: any) {
       setLoading(false);
-    }
+      
+      // ★ 클라이언트 비상용 태양 카드 (최후의 보루)
+      const fallbackMessage: Message = {
+        role: 'assistant',
+        content: "통신 상태가 좋지 않아 신령님 목소리가 끊겼어.. 대신 긍정의 카드를 하나 뽑아줄게!",
+        image: "/tarot/the_sun.jpg", 
+        timestamp: Date.now(),
+        luckyItem: "황금 열쇠",
+        coupangLink: "https://www.coupang.com/np/search?component=&q=%ED%99%A9%EA%B8%88%EC%97%B4%EC%87%A0",
+        teaser: "엄청난 대운이 들어오고 있어!",
+        cardKeywords: ["성공", "긍정", "활력"],
+        cardDescription: "밝은 태양 아래 어린아이가 백마를 타고 노는 카드",
+        cardAnalysis: "어둠이 걷히고 찬란한 태양이 뜨는 형상이야.",
+        cardAdvice: "너의 직감을 믿고 밀고 나가.",
+        isLocked: true
+      };
+      setMessages((prev) => [...prev, fallbackMessage]);
+    } 
   };
 
   if (!isClient) return null;
 
   return (
     <div className="flex flex-col h-screen bg-gradient-to-b from-slate-900 via-purple-900 to-slate-900 text-white font-sans overflow-hidden">
-      
-      {/* 사이드바 */}
       {isSidebarOpen && (
         <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm transition-opacity" onClick={() => setIsSidebarOpen(false)}/>
       )}
@@ -204,20 +237,10 @@ export default function Home() {
           <nav className="space-y-4">
             <div onClick={() => setIsSidebarOpen(false)} className="block p-3 rounded-xl bg-purple-600/20 text-purple-200 font-bold cursor-pointer">💬 상담하기 (Home)</div>
             <Link href="/guide" className="block p-3 rounded-xl hover:bg-white/5 text-gray-300 transition flex items-center gap-2">📖 타로 백서 (도감) <span className="text-[10px] bg-red-500 text-white px-1 rounded">HOT</span></Link>
-            <div className="pt-8 border-t border-white/10">
-               <div className="flex flex-wrap gap-x-3 gap-y-1 items-center">
-                <p className="text-xs text-gray-500 font-bold">Service Info</p>
-                <span className="text-[10px] text-gray-700">|</span>
-                <p className="text-xs text-gray-400">v1.0</p>
-                <span className="text-[10px] text-gray-700">|</span>
-                <p className="text-xs text-gray-400">leedh428@naver.com</p>
-              </div>
-            </div>
           </nav>
         </div>
       </div>
 
-      {/* 헤더 */}
       <header className="fixed top-0 w-full z-10 flex justify-between items-center p-4 bg-white/5 backdrop-blur-md border-b border-white/10 shadow-lg">
         <div className="flex items-center gap-3">
           <button onClick={() => setIsSidebarOpen(true)} className="text-2xl text-purple-200 hover:text-white">☰</button>
@@ -233,7 +256,6 @@ export default function Home() {
         </div>
       </header>
 
-      {/* 메인 */}
       <main className="flex-1 overflow-y-auto pt-20 pb-24 px-4 space-y-6 scrollbar-hide">
         {messages.length === 0 && (
           <div className="flex flex-col items-center justify-center h-full text-center space-y-4 animate-fade-in-up">
@@ -252,7 +274,6 @@ export default function Home() {
               msg.role === 'user' ? 'bg-purple-600 text-white rounded-tr-none' : 'bg-white/10 text-gray-100 border border-white/5 rounded-tl-none'
             }`}>
               
-              {/* 잠금 UI */}
               {msg.isLocked && (
                 <div className="absolute inset-0 z-10 flex flex-col items-center justify-center bg-purple-950/90 backdrop-blur-md p-4 text-center">
                   <div className="text-4xl mb-3 animate-pulse">🔒</div>
@@ -260,7 +281,6 @@ export default function Home() {
                   <p className="text-xs text-gray-400 mb-4 leading-relaxed">
                     <span className="text-purple-300 font-semibold">{msg.luckyItem}</span>(으)로 복채 내고<br/>전체 해석 확인하기
                   </p>
-                  {/* 쿠팡 링크가 아직 안 왔으면(null) 클릭 방지 or 로딩 표시 */}
                   {msg.coupangLink ? (
                     <button onClick={() => unlockMessage(index, msg.coupangLink || '')} className="w-full bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-3 rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2"><span>🔐 잠금 해제 (Click)</span></button>
                   ) : (
@@ -270,7 +290,6 @@ export default function Home() {
                 </div>
               )}
 
-              {/* 내용 */}
               <div className={msg.isLocked ? 'blur-sm opacity-50' : ''}>
                   <p className="whitespace-pre-wrap leading-relaxed text-sm text-gray-100">{msg.content}</p>
                   
@@ -319,7 +338,19 @@ export default function Home() {
             </div>
           </div>
         ))}
-        {loading && <div className="flex items-center gap-2 text-gray-400 text-sm ml-10 animate-pulse"><span>카드를 섞는 중...</span><span className="animate-spin">💫</span></div>}
+
+        {loading && (
+            <div className="flex items-center gap-2 text-gray-400 text-sm ml-10 animate-pulse">
+                <span>
+                {userTurnCount < 3 
+                    ? "언니가 답변을 생각하는 중..." 
+                    : "신중하게 카드를 섞는 중..."}
+                </span>
+                <span className="animate-spin">
+                {userTurnCount < 3 ? "💭" : "💫"}
+                </span>
+            </div>
+        )}
         
         {isLimitReached && (
           <div className="text-center py-4 animate-fade-in">
